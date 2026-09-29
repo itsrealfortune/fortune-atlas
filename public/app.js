@@ -97,64 +97,6 @@ const meshes = MEM.map((p, i) => {
   return m;
 });
 
-// ---------- hubs de tags (intégrés au graphe) ----------
-const tagGroup = new THREE.Group();
-tagGroup.visible = true;
-group.add(tagGroup);
-const tagHubs = [];
-{
-  const byTag = new Map();
-  MEM.forEach((m, i) => {
-    for (const t of m.tags || []) {
-      if (!byTag.has(t)) byTag.set(t, []);
-      byTag.get(t).push(i);
-    }
-  });
-  const entries = [...byTag.entries()].sort((a, b) => b[1].length - a[1].length);
-  const R = 23;
-  entries.forEach(([tag, members], k) => {
-    const mesh = new THREE.Mesh(
-      new THREE.IcosahedronGeometry(1.15),
-      new THREE.MeshBasicMaterial({ color: "#ffd166", wireframe: true, transparent: true, opacity: 0.85 }),
-    );
-    const a = (k / entries.length) * Math.PI * 2;
-    mesh.position.set(Math.cos(a) * R, ((k * 37) % 13 - 6) * 1.1, Math.sin(a) * R);
-    mesh.frustumCulled = false;
-    mesh.userData.tag = tag;
-    tagGroup.add(mesh);
-    tagHubs.push({ tag, count: members.length, mesh, members });
-  });
-}
-let tagEdges = null;
-function buildTagEdges() {
-  if (tagEdges) {
-    tagGroup.remove(tagEdges);
-    tagEdges.geometry.dispose();
-    tagEdges.material.dispose();
-    tagEdges = null;
-  }
-  const pos = [];
-  for (const h of tagHubs) {
-    for (const i of h.members) {
-      if (!meshes[i].visible) continue;
-      const a = meshes[i].position;
-      const b = h.mesh.position;
-      pos.push(a.x, a.y, a.z, b.x, b.y, b.z);
-    }
-  }
-  if (!pos.length) return;
-  const g = new THREE.BufferGeometry();
-  g.setAttribute("position", new THREE.BufferAttribute(new Float32Array(pos), 3));
-  tagEdges = new THREE.LineSegments(
-    g,
-    new THREE.LineBasicMaterial({ color: 0x8a6d3b, transparent: true, opacity: 0.28 }),
-  );
-  tagEdges.frustumCulled = false;
-  tagGroup.add(tagEdges);
-}
-let showHubs = true;
-let selectedTag = null;
-
 // ---------- similarités : cosinus OU Jaccard ----------
 const STOP = new Set(
   ("le la les de des du un une et est en dans que qui pour pas sur au aux ce ces " +
@@ -190,6 +132,41 @@ function cosine(a, b) {
 }
 const TOK = MEM.map((m) => lexTokens(m.content + " " + (m.summary || "")));
 const VEC = MEM.map((m) => (Array.isArray(m.vector) && m.vector.length ? m.vector : null));
+
+// ---------- nuages dimensionnels : paires partageant des tags ----------
+// Pas de nœuds visibles : les tags rares partagés attirent (force invisible).
+// Tags à un seul souvenir évincés d'office (aucune paire).
+const TAGPAIRS = [];
+{
+  const byTag = new Map();
+  MEM.forEach((m, i) => {
+    for (const t of m.tags || []) {
+      if (!byTag.has(t)) byTag.set(t, []);
+      byTag.get(t).push(i);
+    }
+  });
+  const pairWeight = new Map(); // "i-j" -> nb de tags partagés
+  for (const members of byTag.values()) {
+    if (members.length < 2) continue;
+    for (let x = 0; x < members.length; x++) {
+      for (let y = x + 1; y < members.length; y++) {
+        const key = members[x] + "-" + members[y];
+        pairWeight.set(key, (pairWeight.get(key) || 0) + 1);
+      }
+    }
+  }
+  const tagSize = (i) => (MEM[i].tags || []).length;
+  for (const [key, shared] of pairWeight) {
+    const [i, j] = key.split("-").map(Number);
+    // Jaccard sur les sets de tags : un tag rare partagé pèse plus.
+    const ti = new Set(MEM[i].tags || []);
+    let inter = 0;
+    for (const t of MEM[j].tags || []) if (ti.has(t)) inter++;
+    const union = ti.size + (MEM[j].tags || []).length - inter;
+    TAGPAIRS.push({ a: i, b: j, w: 0.3 + 0.7 * (union ? inter / union : 0) + 0.1 * Math.min(shared, 3) });
+  }
+}
+let tagClouds = true;
 
 let EDGES = [];
 let edgeLines = null;
@@ -336,6 +313,20 @@ function physicsStep() {
     disp[e.a * 3] += dx * f; disp[e.a * 3 + 1] += dy * f; disp[e.a * 3 + 2] += dz * f;
     disp[e.b * 3] -= dx * f; disp[e.b * 3 + 1] -= dy * f; disp[e.b * 3 + 2] -= dz * f;
   }
+  if (tagClouds) {
+    for (const e of TAGPAIRS) {
+      if (!meshes[e.a].visible || !meshes[e.b].visible) continue;
+      const a = meshes[e.a].position;
+      const b = meshes[e.b].position;
+      const dx = b.x - a.x;
+      const dy = b.y - a.y;
+      const dz = b.z - a.z;
+      const d = Math.sqrt(dx * dx + dy * dy + dz * dz) + 0.01;
+      const f = (((d * d) / REP_K) * ATT * e.w * temperature) / d;
+      disp[e.a * 3] += dx * f; disp[e.a * 3 + 1] += dy * f; disp[e.a * 3 + 2] += dz * f;
+      disp[e.b * 3] -= dx * f; disp[e.b * 3 + 1] -= dy * f; disp[e.b * 3 + 2] -= dz * f;
+    }
+  }
   const cap = temperature * MAX_STEP;
   for (let i = 0; i < n; i++) {
     if (!meshes[i].visible) continue;
@@ -402,15 +393,12 @@ function refresh() {
     const v = visible(p);
     m.visible = v;
     if (v) n++;
-    const hit = query && (p.content + " " + (p.summary || "")).toLowerCase().includes(query);
-    const inTag = selectedTag && (p.tags || []).includes(selectedTag);
-    m.scale.setScalar(hit || inTag ? 2.2 : 1);
-    m.material.opacity = p.status === "forgotten" ? 0.25 : query && !hit && !inTag ? 0.25 : 0.95;
+    const hit = query && (p.content + " " + (p.summary || "") + " " + (p.tags || []).join(" ")).toLowerCase().includes(query);
+    m.scale.setScalar(hit ? 2.2 : 1);
+    m.material.opacity = p.status === "forgotten" ? 0.25 : query && !hit ? 0.25 : 0.95;
   });
   if (edgeLines) edgeLines.visible = layout === "force";
-  tagGroup.visible = showHubs;
   updateShownEdges();
-  if (layout !== "force") buildTagEdges();
   document.getElementById("count").textContent = n + " / " + MEM.length + " visibles";
 }
 
@@ -421,11 +409,7 @@ const tip = document.getElementById("tip");
 const detail = document.getElementById("detail");
 
 function pickTargets() {
-  const list = meshes.filter((m) => m.visible);
-  if (showHubs) {
-    for (const h of tagHubs) list.push(h.mesh);
-  }
-  return list;
+  return meshes.filter((m) => m.visible);
 }
 function pick(e) {
   mouse.set((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
@@ -435,15 +419,6 @@ function pick(e) {
 ren.domElement.addEventListener("pointermove", (e) => {
   const hit = pick(e);
   if (hit) {
-    if (hit.object.userData.tag) {
-      const h = tagHubs.find((x) => x.mesh === hit.object);
-      tip.style.display = "block";
-      tip.style.left = e.clientX + 14 + "px";
-      tip.style.top = e.clientY + 10 + "px";
-      tip.innerHTML = "<b>#" + escapeHtml(h.tag) + "</b> · " + h.count + " souvenirs";
-      ren.domElement.style.cursor = "pointer";
-      return;
-    }
     const p = MEM[hit.object.userData.i];
     tip.style.display = "block";
     tip.style.left = e.clientX + 14 + "px";
@@ -500,45 +475,10 @@ function showDetail(i) {
 function focusNode(j) {
   ctl.target.copy(meshes[j].position);
 }
-function showTag(tag) {
-  const h = tagHubs.find((x) => x.tag === tag);
-  if (!h) return;
-  selectedTag = tag;
-  refresh();
-  detail.style.display = "block";
-  detail.innerHTML =
-    `<h2>#${escapeHtml(tag)} <span style="color:#ffd166">◆</span></h2>` +
-    `<div class="meta">${h.count} souvenirs tagués</div>` +
-    `<div class="rel">` +
-    h.members
-      .map((j) => `<button data-i="${j}">${escapeHtml((MEM[j].summary || MEM[j].content).slice(0, 70))}… <span style="color:#8b93b0">${MEM[j].type}</span></button>`)
-      .join("") +
-    `</div><div class="rel"><button data-clear="1">✕ désélectionner</button></div>`;
-  detail.querySelectorAll("button[data-i]").forEach((b) => {
-    b.onclick = () => {
-      const j = Number(b.dataset.i);
-      showDetail(j);
-      focusNode(j);
-    };
-  });
-  const clear = detail.querySelector("button[data-clear]");
-  if (clear)
-    clear.onclick = () => {
-      selectedTag = null;
-      detail.style.display = "none";
-      refresh();
-    };
-}
 ren.domElement.addEventListener("click", (e) => {
   const hit = pick(e);
   if (!hit) {
     detail.style.display = "none";
-    selectedTag = null;
-    refresh();
-    return;
-  }
-  if (hit.object.userData.tag) {
-    showTag(hit.object.userData.tag);
     return;
   }
   showDetail(hit.object.userData.i);
@@ -593,9 +533,8 @@ document.getElementById("showForg").onchange = (e) => {
   refresh();
 };
 document.getElementById("showHubs").onchange = (e) => {
-  showHubs = e.target.checked;
-  if (showHubs) buildTagEdges();
-  refresh();
+  tagClouds = e.target.checked;
+  resim();
 };
 
 // ---------- layouts ----------
@@ -668,7 +607,6 @@ let blend = 0;
 const _tmpV = new THREE.Vector3();
 document.getElementById("spin").checked = false;
 computeEdges();
-buildTagEdges();
 refresh();
 (function anim() {
   requestAnimationFrame(anim);
