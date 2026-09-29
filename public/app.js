@@ -26,6 +26,15 @@ const TYPE_GEO = {
   event: () => new THREE.TorusGeometry(0.55, 0.24, 10, 18),
   note: () => new THREE.IcosahedronGeometry(0.75),
 };
+const TYPE_FR = {
+  fact: "Fait",
+  preference: "Préférence",
+  decision: "Décision",
+  commitment: "Engagement",
+  relationship: "Relation",
+  event: "Événement",
+  note: "Note",
+};
 const BRANCH_COLORS = {
   global: "#4cc9f0",
   discord: "#b5179e",
@@ -444,19 +453,6 @@ function buildLabels() {
     labelGroup.add(sprite);
     labels.push({ sprite, members });
   }
-  const byTag = new Map();
-  MEM.forEach((m, i) => {
-    for (const t of m.tags || []) {
-      if (!byTag.has(t)) byTag.set(t, []);
-      byTag.get(t).push(i);
-    }
-  });
-  for (const [tag, members] of byTag) {
-    if (members.length < 4) continue;
-    const sprite = makeLabelSprite("#" + tag, "#ffd166");
-    labelGroup.add(sprite);
-    labels.push({ sprite, members });
-  }
 }
 const _lc = new THREE.Vector3();
 function updateLabels() {
@@ -499,7 +495,7 @@ ren.domElement.addEventListener("pointermove", (e) => {
     tip.style.display = "block";
     tip.style.left = e.clientX + 14 + "px";
     tip.style.top = e.clientY + 10 + "px";
-    tip.innerHTML = "<b>" + p.type + "</b> · " + escapeHtml(shortScope(p.scope)) + "<br>" + escapeHtml(p.content.slice(0, 140)) + "…";
+    tip.innerHTML = "<b>" + (TYPE_FR[p.type] || p.type) + "</b> · " + escapeHtml(shortScope(p.scope)) + "<br>" + escapeHtml(p.content.slice(0, 140)) + "…";
     ren.domElement.style.cursor = "pointer";
   } else {
     tip.style.display = "none";
@@ -535,7 +531,7 @@ function showDetail(i) {
       : "";
   detail.style.display = "block";
   detail.innerHTML =
-    `<h2>${p.type} <span style="color:${BRANCH_COLORS[branchOf(p.scope)]}">●</span></h2>` +
+    `<h2>${TYPE_FR[p.type] || p.type} <span style="color:${BRANCH_COLORS[branchOf(p.scope)]}">●</span></h2>` +
     `<div class="meta">${p.shortId} · ${p.status} · ${p.sensitivity} · ${p.sourceTrust}<br>scope: ${escapeHtml(p.scope)}<br>créé: ${(p.createdAt || "").slice(0, 10)}${p.summary ? "<br>résumé: " + escapeHtml(p.summary) : ""}${p.tags.length ? "<br>tags: " + escapeHtml(p.tags.join(", ")) : ""}</div>` +
     `<p>${escapeHtml(p.content)}</p>` +
     rel(neighborsOf(i), "voisins proches") +
@@ -574,7 +570,7 @@ Object.keys(TYPE_GEO).forEach((t) => {
   const n = MEM.filter((p) => p.type === t).length;
   const d = document.createElement("span");
   d.className = "chip";
-  d.innerHTML = `${t} (${n})`;
+  d.innerHTML = `${TYPE_FR[t] || t} (${n})`;
   d.onclick = () => {
     hiddenTypes.has(t) ? hiddenTypes.delete(t) : hiddenTypes.add(t);
     d.classList.toggle("off");
@@ -636,7 +632,7 @@ document.getElementById("mScopes").onclick = () => setDrawer(drawer.style.displa
 document.getElementById("drawerClose").onclick = () => setDrawer(false);
 
 function memButton(m) {
-  return `<div class="item" data-id="${m.shortId}">${escapeHtml((m.summary || m.content).slice(0, 60))}… <span class="n">${m.type} · ${m.status}</span></div>`;
+  return `<div class="item" data-id="${m.shortId}">${escapeHtml((m.summary || m.content).slice(0, 60))}… <span class="n">${TYPE_FR[m.type] || m.type} · ${m.status === "forgotten" ? "oublié" : "actif"}</span></div>`;
 }
 function renderMiller() {
   const miller = document.getElementById("millercols");
