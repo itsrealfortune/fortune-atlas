@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="fr"><head><meta charset="utf-8">
+<title>Fortune Atlas</title>
+<link rel="stylesheet" href="/styles.css">
+<script type="importmap">{"imports":{"three":"https://unpkg.com/three@0.160.0/build/three.module.js","three/addons/":"https://unpkg.com/three@0.160.0/examples/jsm/"}}</script>
+</head><body>
+<div id="c"></div>
+<div id="panel">
+  <h1>Fortune Atlas <span class="badge">live</span> <span class="badge">v7</span></h1>
+  <div class="sub" id="sub"></div>
+  <div class="seg"><button id="vGraph" class="on">graphe</button><button id="vTree">scopes</button><button id="vTime">timeline</button></div>
+  <div class="seg"><button id="mType" class="on">couleur : type</button><button id="mScope">couleur : scope</button></div>
+  <div id="legend"></div>
+  <div id="scopes"></div>
+  <input id="search" placeholder="rechercher (surligne)…">
+  <div id="sliders">
+    <label>seuil vectoriel <span id="vVecVal">0.25</span><input type="range" id="vVec" min="0" max="0.9" step="0.01" value="0.25"></label>
+    <label>seuil lexical <span id="vLexVal">0.10</span><input type="range" id="vLex" min="0" max="0.5" step="0.01" value="0.10"></label>
+    <label>max arêtes <span id="vMaxVal">300</span><input type="range" id="vMax" min="0" max="1000" step="10" value="300"></label>
+    <div id="edgeLegend"><span style="color:#3ddc84">●</span> les deux <span style="color:#4cc9f0">●</span> vectoriel seul <span style="color:#ff9e00">●</span> lexical seul</div>
+    <div id="edgeCount"></div>
+  </div>
+  <label class="row"><input type="checkbox" id="showForg" checked> afficher les oubliés</label>
+  <label class="row"><input type="checkbox" id="spin"> rotation auto</label>
+  <div class="row"><button id="resim" class="mini">re-simuler le graphe</button></div>
+  <div id="count"></div>
+</div>
+<div id="miller"></div>
+<div id="detail"></div>
+<div id="tip"></div>
+<div id="err"></div>
+<script type="module" src="/app.js"></script>
+</body></html>

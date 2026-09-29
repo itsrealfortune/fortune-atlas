@@ -1,0 +1,11 @@
+{
+  "name": "fortune-atlas",
+  "version": "0.1.0",
+  "description": "Visualiseur externe du vault FortuneMemory : graphe de similarité 3D, arbre POSIX des scopes, timeline.",
+  "type": "module",
+  "scripts": {
+    "serve": "bun src/server.ts",
+    "export": "bun src/export.ts",
+    "typecheck": "bunx tsc --noEmit -p tsconfig.json"
+  }
+}
