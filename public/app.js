@@ -346,28 +346,104 @@ function refresh() {
     m.visible = v;
     if (v) n++;
     const hit = query && (p.content + " " + (p.summary || "")).toLowerCase().includes(query);
-    m.scale.setScalar(hit ? 2.2 : 1);
-    m.material.opacity = p.status === "forgotten" ? 0.25 : query && !hit ? 0.25 : 0.95;
+    const inTag = selectedTag && (p.tags || []).includes(selectedTag);
+    m.scale.setScalar(hit || inTag ? 2.2 : 1);
+    m.material.opacity = p.status === "forgotten" ? 0.25 : query && !hit && !inTag ? 0.25 : 0.95;
   });
   if (edgeLines) edgeLines.visible = view === "graph";
+  tagGroup.visible = view === "tags";
   updateShownEdges();
   document.getElementById("count").textContent = n + " / " + MEM.length + " visibles";
 }
 
-// ---------- picking / détail ----------
+// ---------- graphe biparti des tags ----------
+// Hubs (octaèdres or) sur un anneau + arêtes vers les souvenirs membres.
+// Layout statique (pas de simu) : les souvenirs gardent leur position du graphe.
+const tagGroup = new THREE.Group();
+tagGroup.visible = false;
+group.add(tagGroup);
+const tagHubs = []; // {tag, count, mesh, members:[memIdx]}
+const tagGeo = new THREE.OctahedronGeometry(0.85);
+{
+  const byTag = new Map();
+  MEM.forEach((m, i) => {
+    for (const t of m.tags || []) {
+      if (!byTag.has(t)) byTag.set(t, []);
+      byTag.get(t).push(i);
+    }
+  });
+  const entries = [...byTag.entries()].sort((a, b) => b[1].length - a[1].length);
+  const R = 21;
+  entries.forEach(([tag, members], k) => {
+    const a = (k / entries.length) * Math.PI * 2;
+    const mesh = new THREE.Mesh(
+      tagGeo,
+      new THREE.MeshBasicMaterial({ color: "#ffd166", transparent: true, opacity: 0.9 }),
+    );
+    mesh.position.set(Math.cos(a) * R, ((k * 37) % 11 - 5) * 0.9, Math.sin(a) * R);
+    mesh.frustumCulled = false;
+    mesh.userData.tag = tag;
+    tagGroup.add(mesh);
+    tagHubs.push({ tag, count: members.length, mesh, members });
+  });
+}
+let tagEdges = null;
+function buildTagEdges() {
+  if (tagEdges) {
+    tagGroup.remove(tagEdges);
+    tagEdges.geometry.dispose();
+    tagEdges.material.dispose();
+    tagEdges = null;
+  }
+  const pos = [];
+  for (const h of tagHubs) {
+    for (const i of h.members) {
+      if (!meshes[i].visible) continue;
+      const a = meshes[i].position;
+      const b = h.mesh.position;
+      pos.push(a.x, a.y, a.z, b.x, b.y, b.z);
+    }
+  }
+  if (!pos.length) return;
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.BufferAttribute(new Float32Array(pos), 3));
+  tagEdges = new THREE.LineSegments(
+    g,
+    new THREE.LineBasicMaterial({ color: 0x8a6d3b, transparent: true, opacity: 0.3 }),
+  );
+  tagEdges.frustumCulled = false;
+  tagGroup.add(tagEdges);
+}
+let selectedTag = null;
 const ray = new THREE.Raycaster();
 const mouse = new THREE.Vector2();
 const tip = document.getElementById("tip");
 const detail = document.getElementById("detail");
 
+function pickTargets() {
+  const list = meshes.filter((m) => m.visible);
+  if (view === "tags") {
+    for (const h of tagHubs) list.push(h.mesh);
+  }
+  return list;
+}
 function pick(e) {
   mouse.set((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
   ray.setFromCamera(mouse, cam);
-  return ray.intersectObjects(meshes.filter((m) => m.visible))[0];
+  return ray.intersectObjects(pickTargets())[0];
 }
 ren.domElement.addEventListener("pointermove", (e) => {
   const hit = pick(e);
   if (hit) {
+    if (hit.object.userData.tag) {
+      const h = tagHubs.find((x) => x.mesh === hit.object);
+      tip.style.display = "block";
+      tip.style.left = e.clientX + 14 + "px";
+      tip.style.top = e.clientY + 10 + "px";
+      tip.innerHTML = "<b>#" + escapeHtml(h.tag) + "</b> · " + h.count + " souvenirs";
+      ren.domElement.style.cursor = "pointer";
+      return;
+    }
     const p = MEM[hit.object.userData.i];
     tip.style.display = "block";
     tip.style.left = e.clientX + 14 + "px";
@@ -429,10 +505,46 @@ ren.domElement.addEventListener("click", (e) => {
   const hit = pick(e);
   if (!hit) {
     detail.style.display = "none";
+    selectedTag = null;
+    refresh();
+    return;
+  }
+  if (hit.object.userData.tag) {
+    showTag(hit.object.userData.tag);
     return;
   }
   showDetail(hit.object.userData.i);
 });
+
+function showTag(tag) {
+  const h = tagHubs.find((x) => x.tag === tag);
+  if (!h) return;
+  selectedTag = tag;
+  refresh();
+  detail.style.display = "block";
+  detail.innerHTML =
+    `<h2>#${escapeHtml(tag)} <span style="color:#ffd166">◆</span></h2>` +
+    `<div class="meta">${h.count} souvenirs tagués</div>` +
+    `<div class="rel">` +
+    h.members
+      .map((j) => `<button data-i="${j}">${escapeHtml((MEM[j].summary || MEM[j].content).slice(0, 70))}… <span style="color:#8b93b0">${MEM[j].type}</span></button>`)
+      .join("") +
+    `</div><div class="rel"><button data-clear="1">✕ désélectionner</button></div>`;
+  detail.querySelectorAll("button[data-i]").forEach((b) => {
+    b.onclick = () => {
+      const j = Number(b.dataset.i);
+      showDetail(j);
+      focusNode(j);
+    };
+  });
+  const clear = detail.querySelector("button[data-clear]");
+  if (clear)
+    clear.onclick = () => {
+      selectedTag = null;
+      detail.style.display = "none";
+      refresh();
+    };
+}
 
 // ---------- légendes / contrôles ----------
 const leg = document.getElementById("legend");
@@ -495,8 +607,8 @@ document.getElementById("showForg").onchange = (e) => {
 const miller = document.getElementById("miller");
 function setView(v) {
   view = v;
-  for (const id of ["vGraph", "vTree", "vTime", "vPeel"]) document.getElementById(id).classList.remove("on");
-  document.getElementById(v === "graph" ? "vGraph" : v === "tree" ? "vTree" : v === "time" ? "vTime" : "vPeel").classList.add("on");
+  for (const id of ["vGraph", "vTree", "vTime", "vPeel", "vTags"]) document.getElementById(id).classList.remove("on");
+  document.getElementById(v === "graph" ? "vGraph" : v === "tree" ? "vTree" : v === "time" ? "vTime" : v === "peel" ? "vPeel" : "vTags").classList.add("on");
   miller.style.display = v === "tree" ? "flex" : "none";
   document.getElementById("peel").style.display = v === "peel" ? "block" : "none";
   if (v === "tree") renderMiller();
@@ -506,12 +618,14 @@ function setView(v) {
   } else {
     pelureCap = null;
   }
+  if (v === "tags") buildTagEdges();
   refresh();
 }
 document.getElementById("vGraph").onclick = () => setView("graph");
 document.getElementById("vTree").onclick = () => setView("tree");
 document.getElementById("vTime").onclick = () => setView("time");
 document.getElementById("vPeel").onclick = () => setView("peel");
+document.getElementById("vTags").onclick = () => setView("tags");
 
 function renderPeel() {
   const box = document.getElementById("peel");
