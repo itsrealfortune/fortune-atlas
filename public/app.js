@@ -311,6 +311,15 @@ const timeTargets = MEM.map((m, i) => {
 
 // ---------- état / filtres ----------
 let view = "graph";
+// ---------- pelures de sensibilité ----------
+// Règle du bot : en serveur, sensibilité max 'personal' (jamais 'private') ;
+// en DM, jusqu'à 'private'. 'restricted' n'est visible nulle part.
+const SENS_RANK = { public: 0, personal: 1, private: 2, restricted: 3 };
+const SENS_COLORS = { public: "#06d6a0", personal: "#4cc9f0", private: "#ffd166", restricted: "#ff5555" };
+let pelureCap = null; // null = pas de filtre (vues normales)
+function sensRank(s) {
+  return SENS_RANK[s] !== undefined ? SENS_RANK[s] : 1;
+}
 let colorMode = "type";
 let hiddenTypes = new Set();
 let hiddenScopes = new Set();
@@ -320,6 +329,7 @@ let query = "";
 function visible(p) {
   if (colorMode === "type" ? hiddenTypes.has(p.type) : hiddenScopes.has(p.scope)) return false;
   if (p.status === "forgotten" && !showForg) return false;
+  if (view === "peel" && pelureCap !== null && sensRank(p.sensitivity) > pelureCap) return false;
   return true;
 }
 function recolor() {
@@ -485,15 +495,71 @@ document.getElementById("showForg").onchange = (e) => {
 const miller = document.getElementById("miller");
 function setView(v) {
   view = v;
-  for (const id of ["vGraph", "vTree", "vTime"]) document.getElementById(id).classList.remove("on");
-  document.getElementById(v === "graph" ? "vGraph" : v === "tree" ? "vTree" : "vTime").classList.add("on");
+  for (const id of ["vGraph", "vTree", "vTime", "vPeel"]) document.getElementById(id).classList.remove("on");
+  document.getElementById(v === "graph" ? "vGraph" : v === "tree" ? "vTree" : v === "time" ? "vTime" : "vPeel").classList.add("on");
   miller.style.display = v === "tree" ? "flex" : "none";
+  document.getElementById("peel").style.display = v === "peel" ? "block" : "none";
   if (v === "tree") renderMiller();
+  if (v === "peel") {
+    pelureCap = 1;
+    renderPeel();
+  } else {
+    pelureCap = null;
+  }
   refresh();
 }
 document.getElementById("vGraph").onclick = () => setView("graph");
 document.getElementById("vTree").onclick = () => setView("tree");
 document.getElementById("vTime").onclick = () => setView("time");
+document.getElementById("vPeel").onclick = () => setView("peel");
+
+function renderPeel() {
+  const box = document.getElementById("peel");
+  const ctxName = pelureCap <= 1 ? "serveur" : "DM";
+  const layers = ["public", "personal", "private", "restricted"];
+  let html = `<h3>Contexte : <button class="mini" id="ctxSrv" style="${pelureCap <= 1 ? "background:#2a3350" : ""}">serveur (≤ personal)</button> <button class="mini" id="ctxDm" style="${pelureCap > 1 ? "background:#2a3350" : ""}">DM (≤ private)</button></h3>`;
+  html += "<h3>Couches (visibles / total)</h3>";
+  for (const layer of layers) {
+    const all = MEM.filter((p) => p.sensitivity === layer);
+    const vis = all.filter((p) => sensRank(p.sensitivity) <= pelureCap && (p.status !== "forgotten" || showForg)).length;
+    html += `<div class="layer"><span><span class="dot" style="background:${SENS_COLORS[layer]}"></span>${layer}</span><b>${vis} / ${all.length}</b></div>`;
+  }
+  const exposed = MEM.filter((p) => p.sensitivity === "personal" && p.status === "active");
+  html += `<h3 class="warn">Exposés en ${ctxName} mais pas publics (${exposed.length}) — le graphe ne montre que ce contexte</h3>`;
+  html += exposed
+    .slice(0, 40)
+    .map((m) => `<div class="item" data-id="${m.shortId}">👁 ${escapeHtml((m.summary || m.content).slice(0, 70))}… <span style="color:#8b93b0">${escapeHtml(shortScope(m.scope))}</span></div>`)
+    .join("");
+  if (exposed.length > 40) html += `<div class="item">… +${exposed.length - 40} autres</div>`;
+  const hiddenEverywhere = MEM.filter((p) => sensRank(p.sensitivity) > 2);
+  if (hiddenEverywhere.length) {
+    html += `<h3 class="bad">Invisibles partout (restricted, ${hiddenEverywhere.length})</h3>`;
+    html += hiddenEverywhere
+      .slice(0, 20)
+      .map((m) => `<div class="item" data-id="${m.shortId}">🔒 ${escapeHtml((m.summary || m.content).slice(0, 70))}…</div>`)
+      .join("");
+  }
+  box.innerHTML = html;
+  document.getElementById("ctxSrv").onclick = () => {
+    pelureCap = 1;
+    renderPeel();
+    refresh();
+  };
+  document.getElementById("ctxDm").onclick = () => {
+    pelureCap = 2;
+    renderPeel();
+    refresh();
+  };
+  box.querySelectorAll(".item[data-id]").forEach((el) => {
+    el.onclick = () => {
+      const j = indexById.get(el.dataset.id);
+      if (j !== undefined) {
+        showDetail(j);
+        focusNode(j);
+      }
+    };
+  });
+}
 
 function memButton(m) {
   return `<div class="item" data-id="${m.shortId}">${escapeHtml((m.summary || m.content).slice(0, 60))}… <span class="n">${m.type} · ${m.status}</span></div>`;
