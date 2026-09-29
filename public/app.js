@@ -607,7 +607,6 @@ let blend = 0;
 const _tmpV = new THREE.Vector3();
 document.getElementById("spin").checked = false;
 computeEdges();
-buildLabels();
 refresh();
 (function anim() {
   requestAnimationFrame(anim);
