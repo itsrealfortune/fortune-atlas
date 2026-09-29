@@ -8,8 +8,8 @@
 <div id="panel">
   <h1>Fortune Atlas <span class="badge">live</span> <span class="badge">v7</span></h1>
   <div class="sub" id="sub"></div>
-  <div class="seg"><button id="vGraph" class="on">graphe</button><button id="vTree">scopes</button><button id="vTime">timeline</button><button id="vPeel">pelures</button><button id="vTags">tags</button><button id="vRadar">radar</button></div>
-  <div class="seg"><button id="mType" class="on">couleur : type</button><button id="mScope">couleur : scope</button></div>
+  <div class="seg"><button id="lForce" class="on">libre</button><button id="lTime">temps</button><button id="lRings">anneaux</button></div>
+  <div class="seg"><button id="mScopes">☰ menu scopes</button></div>
   <div id="legend"></div>
   <div id="scopes"></div>
   <input id="search" placeholder="rechercher (surligne)…">
@@ -21,13 +21,12 @@
     <div id="edgeCount"></div>
   </div>
   <label class="row"><input type="checkbox" id="showForg" checked> afficher les oubliés</label>
+  <label class="row"><input type="checkbox" id="showHubs" checked> hubs de tags</label>
   <label class="row"><input type="checkbox" id="spin"> rotation auto</label>
   <div class="row"><button id="resim" class="mini">re-simuler le graphe</button></div>
   <div id="count"></div>
 </div>
-<div id="miller"></div>
-<div id="peel"></div>
-<div id="radar"></div>
+<div id="drawer"><div id="drawerHead"><b>Scopes (déclinaison POSIX)</b><button id="drawerClose">✕</button></div><div id="millercols"></div></div>
 <div id="detail"></div>
 <div id="tip"></div>
 <div id="err"></div>
