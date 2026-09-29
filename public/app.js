@@ -605,13 +605,61 @@ document.getElementById("showForg").onchange = (e) => {
 
 // ---------- vues ----------
 const miller = document.getElementById("miller");
+// ---------- radar : anniversaires, programmés, expirés ----------
+function daysUntil(month, day) {
+  const now = new Date();
+  let next = new Date(now.getFullYear(), month - 1, day);
+  if (next < new Date(now.getFullYear(), now.getMonth(), now.getDate())) {
+    next = new Date(now.getFullYear() + 1, month - 1, day);
+  }
+  return Math.round((next - new Date(now.getFullYear(), now.getMonth(), now.getDate())) / 86400000);
+}
+
+function renderRadar() {
+  const box = document.getElementById("radar");
+  const now = new Date();
+  const bdays = [];
+  for (const m of MEM) {
+    if (!m.occurredAt) continue;
+    const d = new Date(m.occurredAt);
+    if (isNaN(d)) continue;
+    bdays.push({ m, inDays: daysUntil(d.getMonth() + 1, d.getDate()), md: `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}` });
+  }
+  bdays.sort((a, b) => a.inDays - b.inDays);
+  const upcoming = MEM.filter((m) => m.validFrom && new Date(m.validFrom) > now);
+  const expired = MEM.filter((m) => m.validTo && new Date(m.validTo) < now);
+  const item = (m, extra) =>
+    `<div class="item" data-id="${m.shortId}">${extra} ${escapeHtml((m.summary || m.content).slice(0, 70))}…</div>`;
+  let html = `<h3>🎂 Anniversaires (${bdays.length})</h3>`;
+  html += bdays.length
+    ? bdays.map(({ m, inDays, md }) => item(m, inDays === 0 ? "🎉 <b>AUJOURD'HUI</b>" : `J-${inDays} · ${md}`)).join("")
+    : "aucun occurred_at renseigné";
+  html += `<h3>⏳ Programmés — valid_from futur (${upcoming.length})</h3>`;
+  html += upcoming.length ? upcoming.map((m) => item(m, "dès le " + (m.validFrom || "").slice(0, 10))).join("") : "aucun";
+  html += `<h3>⌛ Expirés — valid_to passé (${expired.length})</h3>`;
+  html += expired.length
+    ? expired.map((m) => item(m, "expiré le " + (m.validTo || "").slice(0, 10))).join("")
+    : `<span style="color:#8b93b0">aucun — le jour où valid_to servira, ils apparaîtront ici</span>`;
+  box.innerHTML = html;
+  box.querySelectorAll(".item[data-id]").forEach((el) => {
+    el.onclick = () => {
+      const j = indexById.get(el.dataset.id);
+      if (j !== undefined) {
+        showDetail(j);
+        focusNode(j);
+      }
+    };
+  });
+}
 function setView(v) {
   view = v;
-  for (const id of ["vGraph", "vTree", "vTime", "vPeel", "vTags"]) document.getElementById(id).classList.remove("on");
-  document.getElementById(v === "graph" ? "vGraph" : v === "tree" ? "vTree" : v === "time" ? "vTime" : v === "peel" ? "vPeel" : "vTags").classList.add("on");
+  for (const id of ["vGraph", "vTree", "vTime", "vPeel", "vTags", "vRadar"]) document.getElementById(id).classList.remove("on");
+  document.getElementById(v === "graph" ? "vGraph" : v === "tree" ? "vTree" : v === "time" ? "vTime" : v === "peel" ? "vPeel" : v === "tags" ? "vTags" : "vRadar").classList.add("on");
   miller.style.display = v === "tree" ? "flex" : "none";
   document.getElementById("peel").style.display = v === "peel" ? "block" : "none";
+  document.getElementById("radar").style.display = v === "radar" ? "block" : "none";
   if (v === "tree") renderMiller();
+  if (v === "radar") renderRadar();
   if (v === "peel") {
     pelureCap = 1;
     renderPeel();
@@ -626,6 +674,7 @@ document.getElementById("vTree").onclick = () => setView("tree");
 document.getElementById("vTime").onclick = () => setView("time");
 document.getElementById("vPeel").onclick = () => setView("peel");
 document.getElementById("vTags").onclick = () => setView("tags");
+document.getElementById("vRadar").onclick = () => setView("radar");
 
 function renderPeel() {
   const box = document.getElementById("peel");
