@@ -36,4 +36,5 @@ Variables d'environnement :
 
 ## Roadmap
 
-Voir les idées listées dans les issues : pelures de sensibilité, graphe des tags, cimetière des oubliés, radar des anniversaires, détecteur de doublons par `content_hash`.
+- [x] Pelures de sensibilité, graphe des tags, radar anniversaires/périssables
+- [ ] Cimetière des oubliés, détecteur de doublons par `content_hash`
