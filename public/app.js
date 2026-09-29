@@ -402,78 +402,6 @@ function refresh() {
   document.getElementById("count").textContent = n + " / " + MEM.length + " visibles";
 }
 
-// ---------- étiquettes 3D (scopes + gros tags) ----------
-// Sprites canvas : centroïde des membres visibles, mis à jour par frame.
-const labelGroup = new THREE.Group();
-group.add(labelGroup);
-let labels = []; // {sprite, members:[memIdx], text}
-function makeLabelSprite(text, accent) {
-  const c = document.createElement("canvas");
-  const ctx = c.getContext("2d");
-  const font = "600 30px system-ui,sans-serif";
-  ctx.font = font;
-  const w = Math.ceil(ctx.measureText(text).width) + 36;
-  c.width = w;
-  c.height = 56;
-  const g = ctx;
-  g.fillStyle = "rgba(10,14,23,0.78)";
-  g.strokeStyle = accent;
-  g.lineWidth = 2;
-  g.beginPath();
-  g.roundRect(1, 1, w - 2, 54, 12);
-  g.fill();
-  g.stroke();
-  g.font = font;
-  g.fillStyle = "#e8eaf2";
-  g.textBaseline = "middle";
-  g.fillText(text, 18, 30);
-  const tex = new THREE.CanvasTexture(c);
-  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false }));
-  sp.scale.set(w / 56 * 1.7, 1.7, 1);
-  sp.frustumCulled = false;
-  sp.renderOrder = 10;
-  return sp;
-}
-function buildLabels() {
-  for (const l of labels) {
-    labelGroup.remove(l.sprite);
-    l.sprite.material.map.dispose();
-    l.sprite.material.dispose();
-  }
-  labels = [];
-  if (!document.getElementById("showLabels").checked) return;
-  const byScope = new Map();
-  MEM.forEach((m, i) => {
-    if (!byScope.has(m.scope)) byScope.set(m.scope, []);
-    byScope.get(m.scope).push(i);
-  });
-  for (const [scope, members] of byScope) {
-    if (members.length < 2) continue;
-    const sprite = makeLabelSprite(shortScope(scope), BRANCH_COLORS[branchOf(scope)]);
-    labelGroup.add(sprite);
-    labels.push({ sprite, members });
-  }
-}
-const _lc = new THREE.Vector3();
-function updateLabels() {
-  for (const l of labels) {
-    let n = 0;
-    _lc.set(0, 0, 0);
-    for (const i of l.members) {
-      if (!meshes[i].visible) continue;
-      _lc.add(meshes[i].position);
-      n++;
-    }
-    l.sprite.visible = n > 0;
-    if (!n) continue;
-    _lc.multiplyScalar(1 / n);
-    l.sprite.position.copy(_lc);
-    l.sprite.position.y += 1.6;
-  }
-}
-document.getElementById("showLabels").onchange = () => {
-  buildLabels();
-};
 // ---------- picking / détail ----------
 const ray = new THREE.Raycaster();
 const mouse = new THREE.Vector2();
@@ -699,7 +627,6 @@ refresh();
     syncEdges();
   }
   if (document.getElementById("spin").checked) group.rotation.y += 0.0016;
-  updateLabels();
   ctl.update();
   ren.render(scene, cam);
 })();
