@@ -1,17 +1,53 @@
 /**
  * Accès lecture seule au vault sqlite (WAL-safe : ne bloque jamais le bot).
- * Chemin : FORTUNE_ATLAS_DB > ../clone/data/fortunememories.db.
+ * Chemin: FORTUNE_ATLAS_DB > ../clone/data/fortunememories.db.
+ * Les champs summary/content peuvent être chiffrés (AES-256-GCM, "gcm1:")
+ * par le plugin vault-crypto de chlone: on les déchiffre à la lecture.
  */
 import { Database } from "bun:sqlite";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { decodeVectorBlob } from "./vectors.ts";
+import { VAULT_PREFIX, loadVaultKey, vaultDecrypt } from "./vault-crypto.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 
 export function resolveDbPath(): string {
   if (process.env.FORTUNE_ATLAS_DB) return process.env.FORTUNE_ATLAS_DB;
   return join(here, "..", "..", "..", "clone", "data", "fortunememories.db");
+}
+
+let _vaultKey: Buffer | null | undefined;
+
+function vaultKey(): Buffer | null {
+  if (_vaultKey === undefined) {
+    try {
+      _vaultKey = loadVaultKey();
+      console.log("[fortune-atlas] clé de déchiffrement du vault chargée");
+    } catch (e) {
+      console.error(
+        "[fortune-atlas] FORTUNE_VAULT_KEY indisponible, affichage chiffré:",
+        e instanceof Error ? e.message : e,
+      );
+      _vaultKey = null;
+    }
+  }
+  return _vaultKey;
+}
+
+function maybeDecrypt(value: string): string {
+  if (!value.startsWith(VAULT_PREFIX)) return value; // legacy clair
+  const key = vaultKey();
+  if (!key) return value;
+  try {
+    return vaultDecrypt(key, value);
+  } catch (e) {
+    console.error(
+      "[fortune-atlas] déchiffrement échoué:",
+      e instanceof Error ? e.message : e,
+    );
+    return value;
+  }
 }
 
 export interface VaultMemory {
@@ -52,8 +88,8 @@ function rowToMemory(row: Record<string, unknown>): VaultMemory {
     sensitivity: String(row.sensitivity ?? "personal"),
     sourceTrust: String(row.source_trust ?? "external"),
     status: String(row.status ?? "active"),
-    summary: String(row.summary ?? ""),
-    content: String(row.content ?? ""),
+    summary: maybeDecrypt(String(row.summary ?? "")),
+    content: maybeDecrypt(String(row.content ?? "")),
     tags,
     createdAt: String(row.created_at ?? ""),
     updatedAt: String(row.updated_at ?? ""),
