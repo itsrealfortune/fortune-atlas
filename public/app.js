@@ -16,15 +16,17 @@ window.addEventListener("error", (e) => {
   }
 });
 
-// Forme = type de souvenir. Couleur = branche de scope (spectre unique).
+// Forme = type de souvenir. Silhouettes volontairement contrastées :
+// carré / losange / pointe / borne / boule / anneau / gemme se devinent
+// même à petite taille à l'écran (les 7 formes "arrondies" se fondaient).
 const TYPE_GEO = {
-  fact: () => new THREE.BoxGeometry(1.1, 1.1, 1.1),
-  preference: () => new THREE.OctahedronGeometry(0.85),
-  decision: () => new THREE.TetrahedronGeometry(0.95),
-  commitment: () => new THREE.ConeGeometry(0.65, 1.3, 10),
-  relationship: () => new THREE.SphereGeometry(0.68, 16, 16),
-  event: () => new THREE.TorusGeometry(0.55, 0.24, 10, 18),
-  note: () => new THREE.IcosahedronGeometry(0.75),
+  fact: () => new THREE.BoxGeometry(0.72, 0.72, 0.72),
+  preference: () => new THREE.OctahedronGeometry(0.58),
+  decision: () => new THREE.ConeGeometry(0.44, 0.95, 4), // pyramide à faces plates
+  commitment: () => new THREE.CylinderGeometry(0.3, 0.3, 0.95, 12), // borne
+  relationship: () => new THREE.SphereGeometry(0.46, 16, 12),
+  event: () => new THREE.TorusGeometry(0.38, 0.15, 8, 20),
+  note: () => new THREE.IcosahedronGeometry(0.54, 0), // gemme à facettes
 };
 const TYPE_FR = {
   fact: "Fait",
@@ -79,13 +81,28 @@ document.getElementById("c").appendChild(ren.domElement);
 const ctl = new OrbitControls(cam, ren.domElement);
 ctl.enableDamping = true;
 
+// Lumière + brouillard : sans ombrage, la profondeur 3D est illisible.
+// Le brouillard accorde lointain et fond (#0b0e17) pour un vrai cue de profondeur.
+scene.background = new THREE.Color("#0b0e17");
+scene.fog = new THREE.Fog(0x0b0e17, 36, 110);
+const keyLight = new THREE.DirectionalLight(0xfff4e0, 1.7);
+keyLight.position.set(18, 26, 14);
+scene.add(keyLight);
+const rimLight = new THREE.DirectionalLight(0x8fb6ff, 0.6); // contre-jour froid
+rimLight.position.set(-16, -10, -22);
+scene.add(rimLight);
+scene.add(new THREE.HemisphereLight(0x9fb6ff, 0x1a1030, 0.5));
+scene.add(new THREE.AmbientLight(0xffffff, 0.16));
+
 const group = new THREE.Group();
 scene.add(group);
 const meshes = MEM.map((p, i) => {
   const make = TYPE_GEO[p.type] || TYPE_GEO.note;
   const m = new THREE.Mesh(
     make(),
-    new THREE.MeshBasicMaterial({ color: BRANCH_COLORS[branchOf(p.scope)], transparent: true, opacity: 0.95 }),
+    // Lambert : éclairé, opaque (depthWrite) — la transparence est réservée
+    // aux cas qui la méritent (oubliés, nœuds estompés en sélection).
+    new THREE.MeshLambertMaterial({ color: BRANCH_COLORS[branchOf(p.scope)] }),
   );
   const r = 2 + Math.random() * 2.5;
   const th = Math.random() * Math.PI * 2;
@@ -96,6 +113,29 @@ const meshes = MEM.map((p, i) => {
   group.add(m);
   return m;
 });
+
+// Halo de sélection : anneau billboard autour du nœud choisi, pour le
+// repérer d'entre ses voisins (qui ont pourtant taille et opacité proches).
+const halo = new THREE.Mesh(
+  new THREE.RingGeometry(1.3, 1.46, 32),
+  new THREE.MeshBasicMaterial({ color: 0x4cc9f0, transparent: true, opacity: 0.7, side: THREE.DoubleSide, depthWrite: false }),
+);
+halo.visible = false;
+halo.frustumCulled = false;
+scene.add(halo);
+function updateHalo(t) {
+  const m = selected !== null ? meshes[selected] : null;
+  if (!m || !m.visible) {
+    halo.visible = false;
+    return;
+  }
+  halo.visible = true;
+  m.getWorldPosition(halo.position);
+  halo.quaternion.copy(cam.quaternion); // face toujours la caméra
+  const pulse = 1 + 0.07 * Math.sin(t * 0.004);
+  halo.scale.setScalar(m.scale.x * 0.95 * pulse);
+  halo.material.opacity = 0.5 + 0.25 * Math.sin(t * 0.004);
+}
 
 // ---------- similarités : cosinus OU Jaccard ----------
 const STOP = new Set(
@@ -170,6 +210,11 @@ let tagClouds = true;
 
 let EDGES = [];
 let edgeLines = null;
+let hoverLines = null; // surbrillance des arêtes d'un nœud survolé
+let hoverLinesFor = -1;
+let hoverEdgeList = [];
+const DEG = new Int16Array(MEM.length); // degré = nb d'arêtes (taille des nœuds)
+let hubs = []; // indices triés par degré décroissant (étiquettes)
 const GREEN = new THREE.Color("#3ddc84");
 const BLUE = new THREE.Color("#4cc9f0");
 const ORANGE = new THREE.Color("#ff9e00");
@@ -195,48 +240,89 @@ function computeEdges() {
       const okL = lex >= tL;
       if (!okV && !okL) continue;
       const score = (okV ? vec : 0) + (okL ? lex : 0) + (okV && okL ? 1 : 0);
-      list.push({ a: i, b: j, sim: vec, lex, kind: okV && okL ? 0 : okV ? 1 : 2, score });
+      // strength (0..1) : base de l'opacité de l'arête — un lien faible
+      // reste un lien, mais ne crie pas aussi fort qu'un lien fort.
+      const strength = Math.min(1, okV && okL ? (vec + lex) / 2 + 0.25 : okV ? vec : lex);
+      list.push({ a: i, b: j, sim: vec, lex, kind: okV && okL ? 0 : okV ? 1 : 2, score, strength });
     }
   }
   list.sort((x, y) => y.score - x.score);
   const kept = list.slice(0, maxE);
   EDGES = kept;
+  DEG.fill(0);
+  for (const e of kept) {
+    DEG[e.a]++;
+    DEG[e.b]++;
+  }
+  hubs = Array.from({ length: MEM.length }, (_, i) => i)
+    .filter((i) => DEG[i] > 0)
+    .sort((a, b) => DEG[b] - DEG[a]);
+  applyScales();
   updateShownEdges();
   document.getElementById("edgeCount").textContent = kept.length + " / " + list.length + " arêtes (vec ≥ " + tV.toFixed(2) + " OU lex ≥ " + tL.toFixed(2) + ")";
 }
 let shownEdges = [];
+let physEdges = []; // arêtes visibles SANS filtre de sélection (la physique ne doit pas dériver quand on sélectionne)
 function updateShownEdges() {
-  shownEdges = EDGES.filter((e) => meshes[e.a].visible && meshes[e.b].visible);
+  physEdges = EDGES.filter((e) => meshes[e.a].visible && meshes[e.b].visible);
+  // En sélection, seules les arêtes du nœud choisi restent affichées.
+  shownEdges = selected !== null ? physEdges.filter((e) => e.a === selected || e.b === selected) : physEdges;
   buildEdgeLines(shownEdges);
+  if (hover !== hoverLinesFor) buildHoverLines(hover);
+}
+function edgeGeometry(list, alphaOf) {
+  const pos = new Float32Array(list.length * 6);
+  const col = new Float32Array(list.length * 8); // RGBA par sommet
+  const KINDS = [GREEN, BLUE, ORANGE];
+  list.forEach((e, k) => {
+    const c = KINDS[e.kind];
+    const a = alphaOf(e);
+    col.set([c.r, c.g, c.b, a, c.r, c.g, c.b, a], k * 8);
+  });
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+  g.setAttribute("color", new THREE.BufferAttribute(col, 4)); // 4 = vertexAlphas
+  return g;
+}
+function disposeLines(obj) {
+  if (!obj) return;
+  group.remove(obj);
+  obj.geometry.dispose();
+  obj.material.dispose();
 }
 function buildEdgeLines(list) {
-  if (edgeLines) {
-    group.remove(edgeLines);
-    edgeLines.geometry.dispose();
-    edgeLines.material.dispose();
-    edgeLines = null;
-  }
+  disposeLines(edgeLines);
+  edgeLines = null;
   if (!list.length) {
     syncEdges();
     return;
   }
-  const pos = new Float32Array(list.length * 6);
-  const col = new Float32Array(list.length * 6);
-  const KINDS = [GREEN, BLUE, ORANGE];
-  list.forEach((e, k) => {
-    const c = KINDS[e.kind];
-    col.set([c.r, c.g, c.b, c.r, c.g, c.b], k * 6);
-  });
-  const g = new THREE.BufferGeometry();
-  g.setAttribute("position", new THREE.BufferAttribute(pos, 3));
-  g.setAttribute("color", new THREE.BufferAttribute(col, 3));
+  // Opacité croissante avec la force du lien : le bruit visuel recule,
+  // les vraies similarités ressortent.
   edgeLines = new THREE.LineSegments(
-    g,
-    new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.55 }),
+    edgeGeometry(list, (e) => 0.08 + 0.62 * e.strength),
+    new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, depthWrite: false }),
   );
   edgeLines.frustumCulled = false;
   edgeLines.visible = layout === "force";
   group.add(edgeLines);
+  syncEdges();
+}
+function buildHoverLines(i) {
+  disposeLines(hoverLines);
+  hoverLines = null;
+  hoverLinesFor = i;
+  hoverEdgeList = [];
+  if (i === null || !meshes[i] || !meshes[i].visible) return;
+  hoverEdgeList = shownEdges.filter((e) => e.a === i || e.b === i);
+  if (!hoverEdgeList.length) return;
+  hoverLines = new THREE.LineSegments(
+    edgeGeometry(hoverEdgeList, () => 0.95),
+    new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, depthWrite: false }),
+  );
+  hoverLines.frustumCulled = false;
+  hoverLines.visible = layout === "force";
+  group.add(hoverLines);
   syncEdges();
 }
 let edgeTimer = null;
@@ -251,10 +337,10 @@ document.getElementById("vVec").oninput = () => scheduleEdges(false);
 document.getElementById("vLex").oninput = () => scheduleEdges(false);
 document.getElementById("vMax").oninput = () => scheduleEdges(false);
 
-function syncEdges() {
-  if (!edgeLines) return;
-  const pos = edgeLines.geometry.attributes.position;
-  shownEdges.forEach((e, k) => {
+function writePositions(obj, list) {
+  if (!obj) return;
+  const pos = obj.geometry.attributes.position;
+  list.forEach((e, k) => {
     const a = meshes[e.a].position;
     const b = meshes[e.b].position;
     pos.setXYZ(k * 2, a.x, a.y, a.z);
@@ -262,12 +348,17 @@ function syncEdges() {
   });
   pos.needsUpdate = true;
 }
+function syncEdges() {
+  writePositions(edgeLines, shownEdges);
+  writePositions(hoverLines, hoverEdgeList);
+}
 
 // ---------- force-directed (Fruchterman-Reingold, vitesse plafonnée) ----------
 let temperature = 0.5;
 const disp = new Float32Array(meshes.length * 3);
 function resim() {
   temperature = 0.6;
+  framed = false; // on recadrera une fois la simulation posée
 }
 document.getElementById("resim").onclick = resim;
 
@@ -301,7 +392,7 @@ function physicsStep() {
       disp[j * 3] -= dx * f; disp[j * 3 + 1] -= dy * f; disp[j * 3 + 2] -= dz * f;
     }
   }
-  for (const e of shownEdges) {
+  for (const e of physEdges) {
     if (!meshes[e.a].visible || !meshes[e.b].visible) continue;
     const a = meshes[e.a].position;
     const b = meshes[e.b].position;
@@ -347,7 +438,44 @@ function physicsStep() {
   }
   temperature *= 0.97;
   syncEdges();
+  if (temperature < 0.02) {
+    temperature = 0;
+    if (!framed) {
+      framed = true;
+      frameView();
+    }
+  }
 }
+
+// ---------- cadrage de la vue ----------
+// Le layout force s'étale selon les données et le hasard des positions
+// initiales : sans recadrage, la caméra (distance fixe) se retrouve
+// parfois à l'intérieur du graphe.
+let framed = false;
+const TOP_DIR = new THREE.Vector3(0, 0.85, 0.55).normalize(); // plongée pour les layouts plats
+function frameView() {
+  const pts = meshes.filter((m) => m.visible).map((m) => m.position);
+  if (!pts.length) return;
+  // Centre = centroïde, rayon = 85e percentile : les nœuds isolés aux
+  // quatre coins ne peuvent pas faire reculer la caméra.
+  const c = new THREE.Vector3();
+  for (const p of pts) c.add(p);
+  c.divideScalar(pts.length);
+  const ds = pts.map((p) => p.distanceTo(c)).sort((a, b) => a - b);
+  const r = ds[Math.min(ds.length - 1, Math.floor(ds.length * 0.85))] || 10;
+  // FOV 60° : d ≈ R / tan(30°) ≈ 1.73 R pour que R tienne dans le cadre.
+  const dist = Math.max(16, r * 1.8);
+  ctl.target.copy(c);
+  // Temps et anneaux sont des disques plats : vus de tranche, ils se
+  // confondent — on passe en plongée. Le layout libre garde l'axe courant.
+  const dir = layout === "force" ? cam.position.clone().sub(c) : TOP_DIR.clone();
+  if (dir.lengthSq() < 1e-6) dir.set(0, 0.35, 1); // caméra au hasard si centrée
+  cam.position.copy(c).add(dir.normalize().multiplyScalar(dist));
+  // Le brouillard suit le cadrage : mêmes repères de profondeur partout.
+  scene.fog.near = dist * 0.7;
+  scene.fog.far = dist * 2.4;
+}
+document.getElementById("reframe").onclick = frameView;
 
 // ---------- layouts : temps (récent au centre) et anneaux (sensibilité) ----------
 const SENS_RANK = { public: 0, personal: 1, private: 2, restricted: 3 };
@@ -379,6 +507,8 @@ let hiddenTypes = new Set();
 let hiddenScopes = new Set();
 let showForg = true;
 let query = "";
+let selected = null; // index du nœud sélectionné (isole nœud + voisins)
+let hover = null; // index survolé (surbrillance des arêtes + étiquette)
 
 function visible(p) {
   if (hiddenTypes.has(p.type)) return false;
@@ -386,20 +516,154 @@ function visible(p) {
   if (p.status === "forgotten" && !showForg) return false;
   return true;
 }
+function neighborSet(i) {
+  const out = new Set();
+  for (const e of EDGES) {
+    if (e.a === i) out.add(e.b);
+    else if (e.b === i) out.add(e.a);
+  }
+  return out;
+}
+// Taille = forme d'origine × degré (les hubs se repèrent d'un coup d'œil)
+// × mise en avant (recherche / sélection).
+function applyScales() {
+  meshes.forEach((m) => {
+    const i = m.userData.i;
+    let s = 1 + 0.3 * Math.min(3.5, Math.sqrt(DEG[i])); // x1 → x2.05 max
+    if (m.userData.hit) s *= 1.7;
+    if (selected === i) s *= 1.8;
+    m.scale.setScalar(s);
+  });
+}
+// Opacité : 1 = opaque (depthWrite, pas d'artefact d'ordre de rendu),
+// < 1 = transparent vraiment utile (oublié, estompé, recherche).
+function setOpacity(m, op) {
+  m.material.opacity = op;
+  const tr = op < 0.999;
+  if (m.material.transparent !== tr) {
+    m.material.transparent = tr;
+    m.material.depthWrite = !tr;
+    m.material.needsUpdate = true;
+  }
+}
 function refresh() {
   let n = 0;
+  const nb = selected === null ? null : neighborSet(selected);
   meshes.forEach((m) => {
     const p = MEM[m.userData.i];
     const v = visible(p);
     m.visible = v;
     if (v) n++;
     const hit = query && (p.content + " " + (p.summary || "") + " " + (p.tags || []).join(" ")).toLowerCase().includes(query);
-    m.scale.setScalar(hit ? 2.2 : 1);
-    m.material.opacity = p.status === "forgotten" ? 0.25 : query && !hit ? 0.25 : 0.95;
+    m.userData.hit = !!hit;
+    let op = 1;
+    if (p.status === "forgotten") op = 0.3;
+    else if (query && !hit) op = 0.25;
+    // Sélection : tout le reste s'efface presque, le nœud et ses voisins restent.
+    if (nb && selected !== m.userData.i && !nb.has(m.userData.i)) op = Math.min(op, 0.12);
+    setOpacity(m, op);
   });
+  applyScales();
   if (edgeLines) edgeLines.visible = layout === "force";
+  if (hoverLines) hoverLines.visible = layout === "force";
   updateShownEdges();
   document.getElementById("count").textContent = n + " / " + MEM.length + " visibles";
+}
+
+// ---------- étiquettes 2D (survol, sélection, hubs) ----------
+// Projection HTML : pas d'objet 3D, donc coût quasi nul. N'affiche que ce
+// qui compte — nœud survolé, nœud sélectionné + ses voisins, sinon les hubs.
+const labelHost = document.createElement("div");
+labelHost.id = "labels";
+document.body.appendChild(labelHost);
+const labelEls = new Map(); // i -> div
+const HUB_LABELS = 5;
+function labelKeyFor(set) {
+  return Array.from(set).sort((a, b) => a - b).join(",");
+}
+function labelText(i) {
+  const p = MEM[i];
+  const t = (p.summary || p.content || "").replace(/\s+/g, " ").trim();
+  const s = t.length > 46 ? t.slice(0, 46) + "…" : t;
+  return (TYPE_FR[p.type] || p.type) + " · " + s;
+}
+function labelSet() {
+  const set = new Set();
+  if (selected !== null) {
+    set.add(selected);
+    for (const j of neighborSet(selected)) if (meshes[j].visible) set.add(j);
+  } else {
+    for (let k = 0; k < HUB_LABELS && k < hubs.length; k++) if (meshes[hubs[k]].visible) set.add(hubs[k]);
+  }
+  if (hover !== null) set.add(hover);
+  return set;
+}
+let labelKey = "";
+function syncLabels() {
+  const set = labelSet();
+  const key = labelKeyFor(set);
+  if (key !== labelKey) {
+    labelKey = key;
+    for (const [i, el] of Array.from(labelEls)) {
+      if (set.has(i)) continue;
+      el.remove();
+      labelEls.delete(i);
+    }
+    for (const i of set) {
+      if (labelEls.has(i)) continue;
+      const el = document.createElement("div");
+      el.textContent = labelText(i);
+      labelHost.appendChild(el);
+      labelEls.set(i, el);
+    }
+  }
+  // Classes toujours réappliquées : survoler un hub déjà étiqueté doit
+  // passer la pastille en "hot" même si le jeu d'étiquettes n'a pas bougé.
+  for (const [i, el] of labelEls) {
+    el.className =
+      "lab" +
+      (selected === null && i !== hover ? " hub" : "") +
+      (i === selected ? " sel" : "") +
+      (i === hover ? " hot" : "");
+  }
+}
+const _pv = new THREE.Vector3();
+function updateLabels() {
+  syncLabels();
+  if (!labelEls.size) return;
+  group.updateMatrixWorld();
+  // 1) projection écran
+  const shown = [];
+  for (const [i, el] of labelEls) {
+    const m = meshes[i];
+    if (!m.visible) {
+      el.style.display = "none";
+      continue;
+    }
+    _pv.copy(m.position).applyMatrix4(group.matrixWorld).project(cam);
+    if (_pv.z > 1) {
+      el.style.display = "none"; // derrière la caméra
+      continue;
+    }
+    el.style.display = "block";
+    el._x = (_pv.x * 0.5 + 0.5) * innerWidth;
+    el._y = (_pv.y * -0.5 + 0.5) * innerHeight;
+    shown.push(el);
+  }
+  // 2) désencombrement : on empile vers le bas celles qui se recouvrent
+  // (ordre trié et déterministe → pas de scintillement à l'arrêt).
+  shown.sort((a, b) => a._y - b._y || a._x - b._x);
+  const placed = [];
+  for (const el of shown) {
+    let y = el._y;
+    for (let guard = 0; guard < 6; guard++) {
+      const clash = placed.find((p) => Math.abs(p.x - el._x) < 230 && Math.abs(p.y - y) < 17);
+      if (!clash) break;
+      y += 17;
+    }
+    placed.push({ x: el._x, y });
+    el.style.transform = `translate(-50%,-130%) translate(${el._x.toFixed(1)}px,${y.toFixed(1)}px)`;
+  }
 }
 
 // ---------- picking / détail ----------
@@ -418,6 +682,11 @@ function pick(e) {
 }
 ren.domElement.addEventListener("pointermove", (e) => {
   const hit = pick(e);
+  const i = hit ? hit.object.userData.i : null;
+  if (i !== hover) {
+    hover = i;
+    updateShownEdges();
+  }
   if (hit) {
     const p = MEM[hit.object.userData.i];
     tip.style.display = "block";
@@ -438,6 +707,19 @@ function neighborsOf(i) {
   }
   return out.sort((a, b) => b.sim - a.sim).slice(0, 6);
 }
+function select(i) {
+  selected = i;
+  refresh();
+  showDetail(i);
+}
+function deselect() {
+  selected = null;
+  detail.style.display = "none";
+  refresh();
+}
+addEventListener("keydown", (e) => {
+  if (e.key === "Escape") deselect();
+});
 function showDetail(i) {
   const p = MEM[i];
   const sibs = MEM.map((q, j) => ({ q, j }))
@@ -459,15 +741,16 @@ function showDetail(i) {
       : "";
   detail.style.display = "block";
   detail.innerHTML =
-    `<h2>${TYPE_FR[p.type] || p.type} <span style="color:${BRANCH_COLORS[branchOf(p.scope)]}">●</span></h2>` +
+    `<h2><span>${TYPE_FR[p.type] || p.type} <span style="color:${BRANCH_COLORS[branchOf(p.scope)]}">●</span></span><button id="detailClose" title="désélectionner (Échap)">✕</button></h2>` +
     `<div class="meta">${p.shortId} · ${p.status} · ${p.sensitivity} · ${p.sourceTrust}<br>scope: ${escapeHtml(p.scope)}<br>créé: ${(p.createdAt || "").slice(0, 10)}${p.summary ? "<br>résumé: " + escapeHtml(p.summary) : ""}${p.tags.length ? "<br>tags: " + escapeHtml(p.tags.join(", ")) : ""}</div>` +
     `<p>${escapeHtml(p.content)}</p>` +
     rel(neighborsOf(i), "voisins proches") +
     rel(sibs.map(({ j }) => ({ i: j })), "même scope");
+  detail.querySelector("#detailClose").onclick = deselect;
   detail.querySelectorAll("button[data-i]").forEach((b) => {
     b.onclick = () => {
       const j = Number(b.dataset.i);
-      showDetail(j);
+      select(j);
       focusNode(j);
     };
   });
@@ -478,10 +761,10 @@ function focusNode(j) {
 ren.domElement.addEventListener("click", (e) => {
   const hit = pick(e);
   if (!hit) {
-    detail.style.display = "none";
+    deselect();
     return;
   }
-  showDetail(hit.object.userData.i);
+  select(hit.object.userData.i);
 });
 
 // ---------- légendes / contrôles ----------
@@ -542,7 +825,12 @@ function setLayout(l) {
   layout = l;
   for (const id of ["lForce", "lTime", "lRings"]) document.getElementById(id).classList.remove("on");
   document.getElementById(l === "force" ? "lForce" : l === "time" ? "lTime" : "lRings").classList.add("on");
-  if (l === "force") resim();
+  if (l === "force") {
+    resim();
+  } else {
+    // Les nœuds convergent vers leurs cibles en ~1s : on cadre après.
+    setTimeout(frameView, 1000);
+  }
   refresh();
 }
 document.getElementById("lForce").onclick = () => setLayout("force");
@@ -586,7 +874,11 @@ function renderMiller() {
         MEM.filter((m) => m.scope === node.path).forEach((m) => {
           const el = document.createElement("div");
           el.innerHTML = memButton(m);
-          el.firstChild.onclick = () => showDetail(indexById.get(m.shortId));
+          el.firstChild.onclick = () => {
+        const j = indexById.get(m.shortId);
+        select(j);
+        focusNode(j);
+      };
           div.appendChild(el);
         });
       }
@@ -627,5 +919,20 @@ refresh();
   }
   if (document.getElementById("spin").checked) group.rotation.y += 0.0016;
   ctl.update();
+  updateLabels();
+  updateHalo(performance.now());
   ren.render(scene, cam);
 })();
+
+// Hook console / debug : ATLAS.select(12), ATLAS.setLayout("rings")…
+window.ATLAS = {
+  select,
+  deselect,
+  setLayout,
+  refresh,
+  focusNode,
+  frameView,
+  get hubs() {
+    return hubs;
+  },
+};

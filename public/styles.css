@@ -1,6 +1,6 @@
 html,body{margin:0;height:100%;background:#0b0e17;color:#e8eaf2;font-family:system-ui,sans-serif;overflow:hidden}
 #c{position:fixed;inset:0}
-#panel{position:fixed;top:12px;left:12px;background:#141926ee;border:1px solid #2a3350;border-radius:10px;padding:12px 14px;width:300px;font-size:13px;max-height:94vh;overflow:auto}
+#panel{position:fixed;z-index:6;top:12px;left:12px;background:#141926ee;border:1px solid #2a3350;border-radius:10px;padding:12px 14px;width:300px;font-size:13px;max-height:94vh;overflow:auto}
 #panel h1{font-size:15px;margin:0 0 4px}
 .badge{font-size:10px;background:#2a3350;border-radius:8px;padding:1px 7px;vertical-align:2px}
 #panel .sub{color:#8b93b0;font-size:12px;margin-bottom:8px}
@@ -21,17 +21,19 @@ label.row{display:flex;gap:6px;align-items:center;font-size:12px;margin-top:6px;
 .seg button{flex:1;background:#0b0e17;color:#e8eaf2;border:1px solid #2a3350;border-radius:6px;padding:4px;font-size:12px;cursor:pointer}
 .seg button.on{background:#2a3350}
 button.mini{background:#0b0e17;color:#e8eaf2;border:1px solid #2a3350;border-radius:6px;padding:4px 10px;font-size:12px;cursor:pointer;margin-top:6px}
-#detail{position:fixed;top:12px;right:12px;width:340px;max-height:90vh;overflow:auto;background:#141926f2;border:1px solid #2a3350;border-radius:10px;padding:14px;display:none;font-size:13px}
-#detail h2{font-size:14px;margin:0 0 6px}
+#detail{position:fixed;z-index:6;top:12px;right:12px;width:340px;max-height:90vh;overflow:auto;background:#141926f2;border:1px solid #2a3350;border-radius:10px;padding:14px;display:none;font-size:13px}
+#detail h2{font-size:14px;margin:0 0 6px;display:flex;justify-content:space-between;align-items:center;gap:8px}
+#detailClose{background:#0b0e17;color:#8b93b0;border:1px solid #2a3350;border-radius:6px;padding:1px 7px;font-size:12px;cursor:pointer;flex:none}
+#detailClose:hover{color:#e8eaf2;background:#2a3350}
 #detail .meta{color:#8b93b0;font-size:12px;margin-bottom:8px;line-height:1.7}
 #detail p{white-space:pre-wrap;line-height:1.5}
 #detail .rel{margin-top:8px}
 #detail .rel button{display:block;width:100%;text-align:left;background:#0b0e17;color:#e8eaf2;border:1px solid #2a3350;border-radius:6px;padding:4px 8px;font-size:12px;margin-top:4px;cursor:pointer}
 #detail .rel button:hover{background:#2a3350}
-#tip{position:fixed;pointer-events:none;background:#000c;border:1px solid #2a3350;border-radius:6px;padding:4px 8px;font-size:12px;display:none;max-width:260px}
+#tip{position:fixed;z-index:7;pointer-events:none;background:#000c;border:1px solid #2a3350;border-radius:6px;padding:4px 8px;font-size:12px;display:none;max-width:260px}
 #count{color:#8b93b0;font-size:12px;margin-top:6px}
 #err{position:fixed;bottom:12px;left:12px;max-width:60ch;background:#3d0a0a;border:1px solid #ff5555;border-radius:8px;padding:8px 12px;font-size:12px;display:none;white-space:pre-wrap}
-#drawer{position:fixed;left:330px;top:12px;bottom:12px;right:12px;display:none;flex-direction:column;background:#141926ee;border:1px solid #2a3350;border-radius:10px;padding:12px;font-size:13px}
+#drawer{position:fixed;z-index:6;left:330px;top:12px;bottom:12px;right:12px;display:none;flex-direction:column;background:#141926ee;border:1px solid #2a3350;border-radius:10px;padding:12px;font-size:13px}
 #drawerHead{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
 #drawerHead button{background:#0b0e17;color:#e8eaf2;border:1px solid #2a3350;border-radius:6px;padding:3px 10px;cursor:pointer}
 #millercols{display:flex;gap:8px;overflow-x:auto;flex:1}
@@ -41,3 +43,10 @@ button.mini{background:#0b0e17;color:#e8eaf2;border:1px solid #2a3350;border-rad
 #millercols .item:hover{background:#2a3350}
 #millercols .item.sel{background:#2a3350}
 #millercols .item .n{color:#8b93b0;font-size:11px}
+
+/* étiquettes 2D projetées (survol / sélection / hubs) */
+#labels{position:fixed;inset:0;pointer-events:none;z-index:4;overflow:hidden}
+.lab{position:absolute;left:0;top:0;transform:translate(-50%,-130%);background:#0b0e17d9;border:1px solid #2a3350;border-radius:5px;padding:1px 6px;font-size:11px;color:#e8eaf2;white-space:nowrap;max-width:260px;overflow:hidden;text-overflow:ellipsis;will-change:transform}
+.lab.hub{opacity:.68;font-size:10px;color:#b9c0d8}
+.lab.sel{border-color:#4cc9f0;color:#fff;opacity:1;font-size:12px}
+.lab.hot{border-color:#ff9e00;opacity:1}

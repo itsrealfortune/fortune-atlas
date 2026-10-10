@@ -19,7 +19,7 @@ Variables d'environnement :
 
 ## Vues
 
-- **Graphe** : nœuds = souvenirs, arêtes = similarité **cosinus (vecteurs) OU Jaccard (lexique)** au-dessus des seuils réglables. 🟢 les deux · 🔵 vectoriel seul · 🟠 lexical seul. Layout force-directed temps réel, plafond d'arêtes configurable.
+- **Graphe** : nœuds = souvenirs, arêtes = similarité **cosinus (vecteurs) OU Jaccard (lexique)** au-dessus des seuils réglables. 🟢 les deux · 🔵 vectoriel seul · 🟠 lexical seul. Layout force-directed temps réel, plafond d'arêtes configurable. Lisibilité : éclairage + brouillard de profondeur, taille des nœuds proportionnelle au degré, opacité des arêtes selon leur force, sélection qui isole un nœud et ses voisins (halo + étiquettes 2D projetées), recadrage automatique de la vue (plongée pour les layouts plats).
 - **Scopes** : colonnes Miller sur la déclinaison POSIX (`discord → dm → 9950101… → souvenirs`), avec compteurs.
 - **Timeline** : axe `created_at`, bandes par branche (`global` / `discord` / `personal`).
 - **Fiche** : contenu intégral, métadonnées, voisins proches cliquables, frères du même scope.
