@@ -56,12 +56,11 @@ function escapeHtml(s) {
 
 async function loadData() {
   if (window.ATLAS_STATIC) return window.ATLAS_STATIC;
-  const [mem, edges, scopes] = await Promise.all([
+  const [mem, scopes] = await Promise.all([
     fetch("/api/memories").then((r) => r.json()),
-    fetch("/api/edges?k=3&minSim=0.15").then((r) => r.json()),
     fetch("/api/scopes").then((r) => r.json()),
   ]);
-  return { memories: mem.memories, edges: edges.edges, scopes: scopes.tree };
+  return { memories: mem.memories, scopes: scopes.tree };
 }
 
 const DATA = await loadData();

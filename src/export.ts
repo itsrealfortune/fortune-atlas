@@ -5,7 +5,6 @@
  */
 import { join } from "node:path";
 import { loadVault } from "./core/vault.ts";
-import { kNearestEdges } from "./core/vectors.ts";
 import { buildScopeTree, treeToJson } from "./core/scopes.ts";
 
 const out = process.argv[2] ?? join(process.cwd(), "atlas-static.html");
@@ -19,11 +18,6 @@ for (const m of memories) {
 }
 const payload = {
   memories,
-  edges: kNearestEdges(
-    memories.map((m) => m.vector),
-    3,
-    0.15,
-  ),
   scopes: treeToJson(buildScopeTree(byScope)),
 };
 

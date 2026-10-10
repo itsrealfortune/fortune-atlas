@@ -2,12 +2,12 @@
  * Fortune Atlas — mini-serveur live (bun, localhost uniquement).
  * Lit le vault en lecture seule, sert le frontend + une API JSON :
  *   GET /api/memories   souvenirs (vecteurs inclus)
- *   GET /api/edges?k=3&minSim=0.15   arêtes k-NN cosinus
  *   GET /api/scopes     arbre POSIX des scopes
  * Le frontend statique (public/) consomme la même forme en mode statique.
+ * Les arêtes de similarité sont calculées côté client (cosinus OU Jaccard)
+ * pour garder les curseurs de seuil interactifs.
  */
 import { loadVault } from "./core/vault.ts";
-import { kNearestEdges } from "./core/vectors.ts";
 import { buildScopeTree, treeToJson } from "./core/scopes.ts";
 
 const PORT = Number(process.env.FORTUNE_ATLAS_PORT ?? 8471);
@@ -42,21 +42,6 @@ Bun.serve({
         "text/css",
       ),
     "/api/memories": () => json({ memories: loadVault() }),
-    "/api/edges": (req) => {
-      const url = new URL(req.url);
-      const k = Math.min(10, Math.max(1, Number(url.searchParams.get("k") ?? 3)));
-      const minSim = Math.min(
-        0.99,
-        Math.max(0, Number(url.searchParams.get("minSim") ?? 0.15)),
-      );
-      const memories = loadVault();
-      const edges = kNearestEdges(
-        memories.map((m) => m.vector),
-        k,
-        minSim,
-      );
-      return json({ edges });
-    },
     "/api/scopes": () => {
       const memories = loadVault();
       const byScope = new Map<string, string[]>();

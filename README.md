@@ -27,8 +27,9 @@ Variables d'environnement :
 ## API (mode live)
 
 - `GET /api/memories` — souvenirs + vecteurs
-- `GET /api/edges?k=3&minSim=0.15` — arêtes k-NN cosinus pré-calculées
 - `GET /api/scopes` — arbre des scopes
+
+Les arêtes de similarité (cosinus OU Jaccard, seuils réglables) sont calculées côté client.
 
 ## Confidentialité
 
